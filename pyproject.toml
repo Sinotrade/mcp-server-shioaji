@@ -1,0 +1,17 @@
+[project]
+name = "mcp-server-shioaji"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.5.0",
+    "shioaji>=1.2.5",
+]
+
+[project.scripts]
+mcp-server-shioaji = "mcp_server_shioaji:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
