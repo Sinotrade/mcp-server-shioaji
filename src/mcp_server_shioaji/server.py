@@ -12,6 +12,7 @@ import shioaji as sj
 from dotenv import load_dotenv
 from loguru import logger
 from mcp.server.fastmcp import Context, FastMCP
+# from shioaji.constant import ScannerType
 
 
 @dataclass
@@ -52,10 +53,6 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         accounts = api.login(api_key, secret_key)
         logger.info("Successfully logged in to Shioaji API")
 
-        logger.info("Fetching contracts...")
-        api.fetch_contracts(contract_download=True, contracts_timeout=2 * 60)
-        logger.info("Successfully fetched contracts")
-
         # Yield the API instance in the context
         yield AppContext(api=api)
     except Exception as e:
@@ -88,18 +85,22 @@ async def get_stock_price(ctx: Context, symbols: str) -> List[Dict[str, Any]]:
 
     Args:
         ctx: The tool context containing the API instance
-        symbol: The stock symbol (e.g., '2330' for TSMC)
+        symbols: The stock symbol separated by commas (e.g., 'TW.2330,TW.2317' for TSMC and HTC)
 
     Returns:
         Dictionary containing price information
     """
 
     # Get API from context
-    api = ctx.request_context.lifespan_context["api"]  # type: ignore
-    codes = symbols.split(",")
+    api = ctx.request_context.lifespan_context.api  # type: ignore
+    codes = [
+        symbol.split(".")[1]
+        for symbol in symbols.split(",")
+        if symbol.startswith("TW.")
+    ]
 
     contracts = [
-        api.Contracts.Stocks[code] for code in codes if code in api.Contracts.Stocks
+        api.Contracts.Stocks[code] for code in codes if api.Contracts.Stocks[code]
     ]
     snapshots = api.snapshots(contracts)
 
@@ -129,7 +130,7 @@ async def get_kbars(
 
     Args:
         ctx: The tool context containing the API instance
-        symbol: The stock symbol (e.g., '2330' for TSMC)
+        symbol: The stock symbol (e.g., 'TW.2330' for TSMC)
         start_date: The start date in YYYY-MM-DD format (defaults to today)
         end_date: The end date in YYYY-MM-DD format (defaults to start_date if not provided)
 
@@ -138,9 +139,13 @@ async def get_kbars(
     """
 
     # Get API from context
-    api = ctx.request_context.lifespan_context["api"]  # type: ignore
+    api = ctx.request_context.lifespan_context.api  # type: ignore
 
-    contract = api.Contracts.Stocks[symbol]
+    if not symbol.startswith("TW."):
+        raise ValueError("Symbol only support start with TW.")
+
+    code = symbol.split(".")[1]
+    contract = api.Contracts.Stocks[code]
 
     if not start_date:
         start_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -162,52 +167,43 @@ async def get_kbars(
 
 
 @mcp.tool(
-    name="list_stocks",
-    description="List available stock symbols with optional filtering",
+    name="scan_stocks",
+    description="根據 scanner_type 掃描股票，並且依照 ascending 排序，回傳前 limit 個股票。",
 )
-async def list_stocks(
+async def scan_stocks(
     ctx: Context,
-    exchange: Optional[str] = None,
-    industry: Optional[str] = None,
+    scanner_type: str, #ScannerType,
+    ascending: bool = False,
     limit: int = 20,
 ) -> List[Dict[str, str]]:
     """
-    List available stock symbols with optional filtering.
+    根據 scanner_type 掃描股票，並且依照 ascending 排序，回傳前 limit 個股票。
+    支援的 scanner_type 有：
+    - VolumeRank 成交量排名
+    - AmountRank 成交金額排名
+    - TickCountRank 成交筆數排名
+    - ChangePercentRank 漲幅排名
+    - ChangePriceRank 漲跌價排名
+    - DayRangeRank 日振幅排名
 
     Args:
         ctx: The tool context containing the API instance
-        exchange: Filter by exchange (e.g., 'TSE', 'OTC')
-        industry: Filter by industry category
+        scanner_type: The type of scanner to use (VolumeRank, AmountRank, TickCountRank, ChangePercentRank, ChangePriceRank, DayRangeRank)
+        ascending: Whether to sort in ascending order (default: False)
         limit: Maximum number of stocks to return (default: 20)
 
     Returns:
         List of stock information
     """
     # Get API from context
-    api = ctx.request_context.lifespan_context["api"]  # type: ignore
-
-    stocks = api.Contracts.Stocks
-
-    filtered_stocks = []
-    for stock in stocks:
-        if exchange and stock.exchange != exchange:
-            continue
-
-        # Industry filtering would be implemented here if available in API
-
-        filtered_stocks.append(
-            {
-                "code": stock.code,
-                "name": stock.name,
-                "exchange": stock.exchange,
-                "category": getattr(stock, "category", "Unknown"),
-            }
-        )
-
-        if len(filtered_stocks) >= limit:
-            break
-
-    return filtered_stocks
+    api = ctx.request_context.lifespan_context.api  # type: ignore
+    res = api.scanners(scanner_type, ascending=ascending, count=limit)
+    df = (
+        pl.DataFrame([{**r} for r in res])
+        .with_columns(pl.from_epoch("ts", time_unit="ns").alias("datetime"))
+        .select(pl.exclude("ts"))
+    )
+    return df.to_dicts()
 
 
 def start_server(transport: Literal["stdio", "sse"] = "stdio"):
