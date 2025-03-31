@@ -68,10 +68,12 @@ Get the current price of a stock by its symbol.
 {
   "tool": "get_stock_price",
   "params": {
-    "symbols": "2330"
+    "symbols": "TW.2330,TW.2317"
   }
 }
 ```
+
+Response will include price information for the requested stocks, including open, high, low, close prices, volume, and other trading data.
 
 
 ### get_kbars
@@ -82,27 +84,40 @@ Fetch K-Bar (candlestick) data for a stock within a date range.
 {
   "tool": "get_kbars",
   "params": {
-    "symbol": "2330",
+    "symbol": "TW.2330",
     "start_date": "2023-12-01",
     "end_date": "2023-12-15"
   }
 }
 ```
 
+If `start_date` is not provided, it defaults to today. If `end_date` is not provided, it defaults to the same as `start_date`.
 
-### list_stocks
 
-List available stock symbols with optional filtering.
+### scan_stocks
+
+Scan stocks based on various ranking criteria.
 
 ```json
 {
-  "tool": "list_stocks",
+  "tool": "scan_stocks",
   "params": {
-    "exchange": "TSE",
+    "scanner_type": "VolumeRank",
+    "ascending": false,
     "limit": 10
   }
 }
 ```
+
+Supported scanner types:
+- `VolumeRank` - Ranking by trading volume
+- `AmountRank` - Ranking by trading amount
+- `TickCountRank` - Ranking by number of transactions
+- `ChangePercentRank` - Ranking by percentage change
+- `ChangePriceRank` - Ranking by price change
+- `DayRangeRank` - Ranking by daily range
+
+Default limit is 20, and results are sorted in descending order by default (set `ascending` to `true` for ascending order).
 
 ## Development
 
